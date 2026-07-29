@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ paste.title|default:"Untitled" }} — SnapBin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header a { text-decoration: none; color: #58a6ff; font-size: 22px; font-weight: bold; }
+  .header span { color: #8b949e; font-size: 14px; }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+  .title { font-size: 20px; font-weight: 700; color: #c9d1d9; margin-bottom: 8px; }
+  .meta { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .meta span { font-size: 13px; color: #8b949e; }
+  .lang-badge { background: #21262d; color: #58a6ff; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .code-block { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+  .code-block pre { margin: 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: 14px; line-height: 1.6; }
+  .highlight .k, .highlight .kn, .highlight .kd { color: #ff7b72; }
+  .highlight .s, .highlight .s1, .highlight .s2 { color: #a5d6ff; }
+  .highlight .nb, .highlight .nf { color: #d2a8ff; }
+  .highlight .c, .highlight .c1, .highlight .cm { color: #8b949e; }
+  .highlight .nn, .highlight .nc { color: #ffa657; }
+  .highlight .o, .highlight .p { color: #c9d1d9; }
+  .highlight .mi, .highlight .mf { color: #79c0ff; }
+  .highlight .bp { color: #79c0ff; }
+  .highlight .ow { color: #ff7b72; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  button { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+  .btn-copy { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .btn-copy:hover { background: #30363d; }
+  .btn-raw { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .btn-raw:hover { background: #30363d; }
+  .btn-home { background: #238636; color: #fff; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .btn-home:hover { background: #2ea043; }
+  .raw-content { display: none; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #238636; color: #fff; padding: 12px 20px; border-radius: 6px; font-size: 14px; display: none; z-index: 999; }
+  .expired { text-align: center; padding: 60px 20px; }
+  .expired h2 { color: #f85149; margin-bottom: 8px; }
+  .expired p { color: #8b949e; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/">&lt;/&gt; SnapBin</a>
+  <span>Fast code sharing</span>
+</div>
+
+<div class="container">
+  {% if paste %}
+  <div class="card">
+    <div class="title">{{ paste.title|default:"Untitled" }}</div>
+    <div class="meta">
+      <span class="lang-badge">{{ paste.language }}</span>
+      <span>{{ paste.view_count }} views</span>
+      <span>Created {{ paste.created_at|timesince }} ago</span>
+      {% if paste.expires_at %}
+      <span>Expires {{ paste.expires_at|timeuntil }}</span>
+      {% else %}
+      <span>Never expires</span>
+      {% endif %}
+    </div>
+
+    <div class="code-block">
+      {{ paste.highlighted_html|safe }}
+    </div>
+
+    <div class="actions">
+      <button class="btn-copy" onclick="copyCode()">Copy Code</button>
+      <a class="btn-raw" href="/api/pastes/{{ paste.short_code }}/">Raw JSON</a>
+      <a class="btn-home" href="/">New Paste</a>
+    </div>
+  </div>
+
+  <pre class="raw-content" id="raw-content">{{ paste.content }}</pre>
+
+  {% else %}
+  <div class="card expired">
+    <h2>Paste Not Found</h2>
+    <p>This paste has expired or been deleted.</p>
+    <a class="btn-home" href="/" style="margin-top: 20px; display: inline-flex;">Create New Paste</a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+function copyCode() {
+  const content = document.getElementById('raw-content').textContent;
+  navigator.clipboard.writeText(content);
+  const t = document.getElementById('toast');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2000);
+}
+</script>
+</body>
+</html>

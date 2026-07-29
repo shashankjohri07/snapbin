@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapBin — Code Sharing</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 22px; color: #58a6ff; }
+  .header span { color: #8b949e; font-size: 14px; }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; color: #58a6ff; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 6px; margin-top: 12px; }
+  input, select, textarea { width: 100%; padding: 10px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 14px; font-family: 'Fira Code', 'Consolas', monospace; }
+  textarea { min-height: 200px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #58a6ff; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+  .btn-primary { background: #238636; color: #fff; margin-top: 16px; }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+  .btn-secondary:hover { background: #30363d; }
+  .btn-danger { background: #da3633; color: #fff; font-size: 12px; padding: 6px 12px; }
+  .btn-danger:hover { background: #f85149; }
+  .result { margin-top: 16px; padding: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; display: none; }
+  .result .url { color: #58a6ff; word-break: break-all; text-decoration: none; font-weight: 600; }
+  .result .url:hover { text-decoration: underline; }
+  .paste-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #21262d; cursor: pointer; }
+  .paste-item:last-child { border-bottom: none; }
+  .paste-item:hover { background: #0d1117; margin: 0 -12px; padding: 12px; border-radius: 6px; }
+  .paste-title { font-weight: 600; color: #c9d1d9; }
+  .paste-meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .paste-lang { background: #21262d; color: #8b949e; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+  .view-paste { margin-top: 20px; }
+  .view-paste .highlight { background: #0d1117; padding: 16px; border-radius: 6px; border: 1px solid #30363d; overflow-x: auto; }
+  .view-paste .highlight pre { margin: 0; font-family: 'Fira Code', 'Consolas', monospace; font-size: 14px; line-height: 1.6; }
+  .view-paste .highlight .k, .view-paste .highlight .kn, .view-paste .highlight .kd { color: #ff7b72; }
+  .view-paste .highlight .s, .view-paste .highlight .s1, .view-paste .highlight .s2 { color: #a5d6ff; }
+  .view-paste .highlight .nb, .view-paste .highlight .nf { color: #d2a8ff; }
+  .view-paste .highlight .c, .view-paste .highlight .c1, .view-paste .highlight .cm { color: #8b949e; }
+  .view-paste .highlight .nn, .view-paste .highlight .nc { color: #ffa657; }
+  .view-paste .highlight .o, .view-paste .highlight .p { color: #c9d1d9; }
+  .view-paste .highlight .mi, .view-paste .highlight .mf { color: #79c0ff; }
+  .view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 0; margin-bottom: 20px; }
+  .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: #8b949e; font-size: 14px; transition: 0.2s; }
+  .tab:hover { color: #c9d1d9; }
+  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+  .section { display: none; }
+  .section.active { display: block; }
+  .empty { text-align: center; color: #8b949e; padding: 40px; }
+  .copy-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 12px; font-size: 12px; }
+  .stats { display: flex; gap: 16px; margin-top: 8px; }
+  .stats span { font-size: 12px; color: #8b949e; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #238636; color: #fff; padding: 12px 20px; border-radius: 6px; font-size: 14px; display: none; z-index: 999; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#60;/&#62; SnapBin</h1>
+  <span>Fast code sharing</span>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('create')">New Paste</div>
+    <div class="tab" onclick="showTab('browse')">Browse</div>
+  </div>
+
+  <!-- CREATE SECTION -->
+  <div id="create" class="section active">
+    <div class="card">
+      <h2>Create New Paste</h2>
+      <label>Title (optional)</label>
+      <input type="text" id="title" placeholder="e.g. Quick Sort Implementation">
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>Language</label>
+          <select id="language"><option value="text">Plain Text</option></select>
+        </div>
+        <div>
+          <label>Expires In</label>
+          <select id="expires">
+            <option value="">Never</option>
+            <option value="600">10 Minutes</option>
+            <option value="3600" selected>1 Hour</option>
+            <option value="86400">1 Day</option>
+            <option value="604800">1 Week</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Code / Text</label>
+      <textarea id="content" placeholder="Paste your code here..."></textarea>
+
+      <button class="btn-primary" onclick="createPaste()">Create Paste</button>
+
+      <div class="result" id="result">
+        Paste created! <a class="url" id="paste-url" href="#" target="_blank"></a>
+        <button class="copy-btn" onclick="copyUrl()" style="margin-left:12px">Copy Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BROWSE SECTION -->
+  <div id="browse" class="section">
+    <div class="card">
+      <h2>Recent Pastes</h2>
+      <div id="paste-list"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- VIEW SECTION -->
+  <div id="view" class="section">
+    <div class="card view-paste">
+      <div class="view-header">
+        <div>
+          <h2 id="view-title">Untitled</h2>
+          <div class="stats">
+            <span id="view-lang"></span>
+            <span id="view-views"></span>
+            <span id="view-created"></span>
+          </div>
+        </div>
+        <div>
+          <button class="copy-btn" onclick="copyContent()">Copy Code</button>
+          <button class="btn-danger" onclick="deletePaste()" style="margin-left:6px">Delete</button>
+        </div>
+      </div>
+      <div id="view-highlight" class="highlight" style="margin-top:14px"></div>
+      <button class="btn-secondary" onclick="showTab('browse')" style="margin-top:14px">Back</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+const API = '/api';
+let currentCode = '';
+let currentContent = '';
+
+function loadLanguages() {
+  const sel = document.getElementById('language');
+  const languages = [
+    ['python', 'Python'],
+    ['javascript', 'JavaScript'],
+    ['typescript', 'TypeScript'],
+    ['java', 'Java'],
+    ['c', 'C'],
+    ['cpp', 'C++'],
+    ['csharp', 'C#'],
+    ['go', 'Go'],
+    ['rust', 'Rust'],
+    ['ruby', 'Ruby'],
+    ['php', 'PHP'],
+    ['swift', 'Swift'],
+    ['kotlin', 'Kotlin'],
+    ['html', 'HTML'],
+    ['css', 'CSS'],
+    ['sql', 'SQL'],
+    ['bash', 'Bash'],
+    ['json', 'JSON'],
+    ['yaml', 'YAML'],
+    ['markdown', 'Markdown'],
+    ['xml', 'XML'],
+    ['dockerfile', 'Dockerfile'],
+  ];
+  languages.forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    sel.appendChild(opt);
+  });
+}
+
+async function createPaste() {
+  const body = { content: document.getElementById('content').value };
+  if (!body.content.trim()) { alert('Content is required'); return; }
+  const title = document.getElementById('title').value.trim();
+  if (title) body.title = title;
+  body.language = document.getElementById('language').value;
+  const exp = document.getElementById('expires').value;
+  if (exp) body.expires_in = parseInt(exp);
+
+  const res = await fetch(`${API}/pastes/`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (res.ok) {
+    const url = window.location.origin + `/p/${data.short_code}/`;
+    document.getElementById('paste-url').href = url;
+    document.getElementById('paste-url').textContent = url;
+    document.getElementById('result').style.display = 'block';
+    currentCode = data.short_code;
+  } else {
+    alert(JSON.stringify(data));
+  }
+}
+
+async function loadPastes() {
+  try {
+    const res = await fetch(`${API}/pastes/list/`);
+    const data = await res.json();
+    const list = document.getElementById('paste-list');
+    if (!data.results.length) { list.innerHTML = '<div class="empty">No pastes yet. Create one!</div>'; return; }
+    list.innerHTML = data.results.map(p => `
+      <div class="paste-item" onclick="viewPaste('${p.short_code}')">
+        <div>
+          <div class="paste-title">${p.title || 'Untitled'}</div>
+          <div class="paste-meta">${timeAgo(p.created_at)} &middot; ${p.view_count} views${p.expires_at ? ' &middot; expires ' + timeAgo(p.expires_at) : ''}</div>
+        </div>
+        <span class="paste-lang">${p.language}</span>
+      </div>
+    `).join('');
+  } catch(e) { document.getElementById('paste-list').innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+
+async function viewPaste(code) {
+  currentCode = code;
+  const res = await fetch(`${API}/pastes/${code}/`);
+  if (!res.ok) { alert('Paste not found'); return; }
+  const p = await res.json();
+  currentContent = p.content;
+  document.getElementById('view-title').textContent = p.title || 'Untitled';
+  document.getElementById('view-lang').textContent = p.language;
+  document.getElementById('view-views').textContent = p.view_count + ' views';
+  document.getElementById('view-created').textContent = timeAgo(p.created_at);
+  document.getElementById('view-highlight').innerHTML = p.highlighted_html;
+  showTab('view');
+}
+
+async function deletePaste() {
+  if (!confirm('Delete this paste?')) return;
+  await fetch(`${API}/pastes/${currentCode}/delete/`, {method:'DELETE'});
+  showTab('browse');
+}
+
+function copyUrl() {
+  navigator.clipboard.writeText(document.getElementById('paste-url').textContent);
+  showToast('Link copied!');
+}
+function copyContent() {
+  navigator.clipboard.writeText(currentContent);
+  showToast('Code copied!');
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2000);
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(name).classList.add('active');
+  const tabs = document.querySelectorAll('.tab');
+  if (name === 'create') tabs[0].classList.add('active');
+  else if (name === 'browse') { tabs[1].classList.add('active'); loadPastes(); }
+}
+
+function timeAgo(dateStr) {
+  const diff = (Date.now() - new Date(dateStr)) / 1000;
+  if (diff < 0) return 'in ' + formatDuration(-diff);
+  return formatDuration(diff) + ' ago';
+}
+function formatDuration(s) {
+  if (s < 60) return Math.floor(s) + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  if (s < 86400) return Math.floor(s/3600) + 'h';
+  return Math.floor(s/86400) + 'd';
+}
+
+loadLanguages();
+</script>
+</body>
+</html>
