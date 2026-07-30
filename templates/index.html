@@ -56,6 +56,14 @@
   .copy-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 12px; font-size: 12px; }
   .stats { display: flex; gap: 16px; margin-top: 8px; }
   .stats span { font-size: 12px; color: #8b949e; }
+  .stats-bar { display: flex; gap: 0; margin-bottom: 20px; }
+  .stat-box { flex: 1; background: #161b22; border: 1px solid #30363d; padding: 16px; text-align: center; }
+  .stat-box:first-child { border-radius: 8px 0 0 8px; }
+  .stat-box:last-child { border-radius: 0 8px 8px 0; }
+  .stat-box:not(:last-child) { border-right: none; }
+  .stat-num { font-size: 28px; font-weight: 700; color: #58a6ff; }
+  .stat-label { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .line-nums { float: left; padding-right: 16px; border-right: 1px solid #30363d; margin-right: 16px; text-align: right; user-select: none; color: #484f58; font-family: 'Fira Code', 'Consolas', monospace; font-size: 14px; line-height: 1.6; white-space: pre; }
   .toast { position: fixed; bottom: 24px; right: 24px; background: #238636; color: #fff; padding: 12px 20px; border-radius: 6px; font-size: 14px; display: none; z-index: 999; }
 </style>
 </head>
@@ -67,6 +75,21 @@
 </div>
 
 <div class="container">
+  <div class="stats-bar">
+    <div class="stat-box">
+      <div class="stat-num" id="stat-total">-</div>
+      <div class="stat-label">Total Pastes</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="stat-active">-</div>
+      <div class="stat-label">Active Now</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="stat-views">-</div>
+      <div class="stat-label">Total Views</div>
+    </div>
+  </div>
+
   <div class="tabs">
     <div class="tab active" onclick="showTab('create')">New Paste</div>
     <div class="tab" onclick="showTab('browse')">Browse</div>
@@ -231,7 +254,10 @@ async function viewPaste(code) {
   document.getElementById('view-lang').textContent = p.language;
   document.getElementById('view-views').textContent = p.view_count + ' views';
   document.getElementById('view-created').textContent = timeAgo(p.created_at);
-  document.getElementById('view-highlight').innerHTML = p.highlighted_html;
+  const lines = p.content.split('\n').length;
+  const lineNums = Array.from({length: lines}, (_, i) => i + 1).join('\n');
+  document.getElementById('view-highlight').innerHTML =
+    '<div class="line-nums">' + lineNums + '</div>' + p.highlighted_html;
   showTab('view');
 }
 
@@ -276,7 +302,18 @@ function formatDuration(s) {
   return Math.floor(s/86400) + 'd';
 }
 
+async function loadStats() {
+  try {
+    const res = await fetch(`${API}/stats/`);
+    const s = await res.json();
+    document.getElementById('stat-total').textContent = s.total_pastes;
+    document.getElementById('stat-active').textContent = s.active_pastes;
+    document.getElementById('stat-views').textContent = s.total_views;
+  } catch(e) {}
+}
+
 loadLanguages();
+loadStats();
 </script>
 </body>
 </html>

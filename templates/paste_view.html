@@ -27,6 +27,7 @@
   .highlight .mi, .highlight .mf { color: #79c0ff; }
   .highlight .bp { color: #79c0ff; }
   .highlight .ow { color: #ff7b72; }
+  .line-nums { float: left; padding-right: 16px; border-right: 1px solid #30363d; margin-right: 16px; text-align: right; user-select: none; color: #484f58; font-family: 'Fira Code', 'Consolas', monospace; font-size: 14px; line-height: 1.6; white-space: pre; }
   .actions { display: flex; gap: 10px; margin-top: 16px; }
   button { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; }
   .btn-copy { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
@@ -64,9 +65,10 @@
       {% endif %}
     </div>
 
-    <div class="code-block">
+    <div class="code-block" id="code-block">
       {{ paste.highlighted_html|safe }}
     </div>
+    <pre id="raw-content-lines" style="display:none">{{ paste.content }}</pre>
 
     <div class="actions">
       <button class="btn-copy" onclick="copyCode()">Copy Code</button>
@@ -89,6 +91,16 @@
 <div class="toast" id="toast">Copied!</div>
 
 <script>
+function addLineNumbers() {
+  const raw = document.getElementById('raw-content-lines');
+  if (!raw) return;
+  const lines = raw.textContent.split('\n').length;
+  const lineNums = Array.from({length: lines}, (_, i) => i + 1).join('\n');
+  const block = document.getElementById('code-block');
+  block.insertAdjacentHTML('afterbegin', '<div class="line-nums">' + lineNums + '</div>');
+}
+addLineNumbers();
+
 function copyCode() {
   const content = document.getElementById('raw-content').textContent;
   navigator.clipboard.writeText(content);

@@ -138,3 +138,19 @@ class LanguageListView(APIView):
             {alias for _, aliases, _, _ in get_all_lexers() for alias in aliases}
         )
         return Response(languages)
+
+
+class StatsView(APIView):
+    def get(self, request):
+        total = Paste.objects.count()
+        active = Paste.objects.filter(is_active=True).exclude(
+            expires_at__lte=timezone.now()
+        ).count()
+        total_views = Paste.objects.aggregate(
+            total=db_models.Sum("view_count")
+        )["total"] or 0
+        return Response({
+            "total_pastes": total,
+            "active_pastes": active,
+            "total_views": total_views,
+        })

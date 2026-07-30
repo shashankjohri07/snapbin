@@ -8,4 +8,5 @@ urlpatterns = [
     path("pastes/<str:short_code>/", views.RetrievePasteView.as_view(), name="paste-detail"),
     path("pastes/<str:short_code>/delete/", views.DeletePasteView.as_view(), name="paste-delete"),
     path("languages/", views.LanguageListView.as_view(), name="language-list"),
+    path("stats/", views.StatsView.as_view(), name="stats"),
 ]
