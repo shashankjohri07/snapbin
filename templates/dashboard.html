@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics Dashboard — SnapBin</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header a { color: #58a6ff; text-decoration: none; font-size: 22px; font-weight: bold; }
+  .header nav a { font-size: 14px; font-weight: 600; margin-left: 18px; color: #8b949e; }
+  .header nav a.active, .header nav a:hover { color: #58a6ff; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  h2 { font-size: 15px; color: #58a6ff; margin-bottom: 14px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .tile .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: .5px; }
+  .tile .value { font-size: 30px; font-weight: 700; color: #c9d1d9; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 18px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 800px) { .grid, .grid-2 { grid-template-columns: 1fr; } }
+  .chart-box { position: relative; height: 260px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: #8b949e; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #30363d; }
+  td { padding: 8px; border-bottom: 1px solid #21262d; }
+  td.num, th.num { text-align: right; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; }
+  .pass, .success { background: #12361f; color: #3fb950; }
+  .fail, .failed { background: #3d1418; color: #f85149; }
+  .check { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #21262d; }
+  .check:last-child { border-bottom: none; }
+  .check small { display: block; color: #8b949e; margin-top: 3px; }
+  .empty { color: #8b949e; text-align: center; padding: 30px 10px; font-size: 14px; }
+  .status { font-size: 13px; color: #8b949e; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .overall { font-size: 13px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/">&lt;/&gt; SnapBin</a>
+  <nav><a href="/">Create</a><a href="/dashboard/" class="active">Dashboard</a></nav>
+</div>
+
+<div class="container">
+  <div class="status">
+    <span id="updated">Loading...</span>
+    <label>Range
+      <select id="days" onchange="loadAll()">
+        <option value="7">Last 7 days</option>
+        <option value="14" selected>Last 14 days</option>
+        <option value="30">Last 30 days</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="tiles">
+    <div class="card tile"><div class="label">Total pastes</div><div class="value" id="t-total">-</div></div>
+    <div class="card tile"><div class="label">Active pastes</div><div class="value" id="t-active">-</div></div>
+    <div class="card tile"><div class="label">Total views</div><div class="value" id="t-views">-</div></div>
+    <div class="card tile"><div class="label">Pipeline</div><div class="value" id="t-health" style="font-size:22px">-</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Daily views and 3-day moving average</h2>
+      <div class="chart-box"><canvas id="daily-chart"></canvas></div>
+      <div class="empty" id="daily-empty" style="display:none">No rollup data yet. Create and view a few pastes, then refresh.</div>
+    </div>
+    <div class="card">
+      <h2>Views by language</h2>
+      <div class="chart-box"><canvas id="lang-chart"></canvas></div>
+      <div class="empty" id="lang-empty" style="display:none">No views yet.</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Top pastes</h2>
+      <div id="top-body"></div>
+    </div>
+    <div class="card">
+      <h2>Data quality checks <span class="overall" id="overall"></span></h2>
+      <div id="checks-body"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recent pipeline runs</h2>
+    <div id="runs-body"></div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let dailyChart = null, langChart = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function getJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(url + ' -> ' + res.status);
+  return res.json();
+}
+function setText(id, value) { document.getElementById(id).textContent = value; }
+
+function renderTiles(stats) {
+  setText('t-total', stats.total_pastes);
+  setText('t-active', stats.active_pastes);
+  setText('t-views', stats.total_views);
+}
+
+function drawChart(existing, canvasId, config) {
+  if (typeof Chart === 'undefined') return null;
+  if (existing) existing.destroy();
+  return new Chart(document.getElementById(canvasId), config);
+}
+
+function renderDaily(rows) {
+  const empty = !rows.length;
+  document.getElementById('daily-empty').style.display = empty ? 'block' : 'none';
+  document.querySelector('#daily-chart').parentElement.style.display = empty ? 'none' : 'block';
+  if (empty) return;
+  dailyChart = drawChart(dailyChart, 'daily-chart', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.date),
+      datasets: [
+        { type: 'bar', label: 'Views', data: rows.map(r => r.views), backgroundColor: '#1f6feb', order: 2 },
+        { type: 'line', label: '3-day avg', data: rows.map(r => r.views_3d_avg), borderColor: '#f0883e',
+          backgroundColor: '#f0883e', tension: 0.3, pointRadius: 3, order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#c9d1d9' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
+        y: { beginAtZero: true, ticks: { color: '#8b949e', precision: 0 }, grid: { color: '#21262d' } },
+      },
+    },
+  });
+}
+
+function renderLanguages(byLanguage) {
+  const empty = !byLanguage.length;
+  document.getElementById('lang-empty').style.display = empty ? 'block' : 'none';
+  document.querySelector('#lang-chart').parentElement.style.display = empty ? 'none' : 'block';
+  if (empty) return;
+  const palette = ['#1f6feb', '#3fb950', '#f0883e', '#a371f7', '#db61a2', '#d29922', '#58a6ff', '#8b949e'];
+  langChart = drawChart(langChart, 'lang-chart', {
+    type: 'doughnut',
+    data: {
+      labels: byLanguage.map(r => r.language),
+      datasets: [{ data: byLanguage.map(r => r.views), backgroundColor: byLanguage.map((_, i) => palette[i % palette.length]), borderColor: '#161b22' }],
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#c9d1d9' } } } },
+  });
+}
+
+function renderTop(top) {
+  const el = document.getElementById('top-body');
+  if (!top.length) { el.innerHTML = '<div class="empty">No views yet.</div>'; return; }
+  el.innerHTML = '<table><tr><th>Paste</th><th>Language</th><th class="num">Views</th></tr>' +
+    top.map(r => `<tr><td><a href="/p/${encodeURIComponent(r.short_code)}/" style="color:#58a6ff">${esc(r.short_code)}</a></td><td>${esc(r.language)}</td><td class="num">${esc(r.views)}</td></tr>`).join('') +
+    '</table>';
+}
+
+function renderHealth(h) {
+  setText('overall', '');
+  const badge = document.getElementById('t-health');
+  badge.innerHTML = `<span class="badge ${h.healthy ? 'pass' : 'fail'}">${h.healthy ? 'HEALTHY' : 'ATTENTION'}</span>`;
+  document.getElementById('overall').innerHTML = `<span class="badge ${h.healthy ? 'pass' : 'fail'}">${h.healthy ? 'ALL PASS' : 'FAILING'}</span>`;
+  document.getElementById('checks-body').innerHTML = h.checks.map(c =>
+    `<div class="check"><div>${esc(c.check)}<small>${esc(c.detail)}</small></div><span class="badge ${c.passed ? 'pass' : 'fail'}">${c.passed ? 'PASS' : 'FAIL'}</span></div>`
+  ).join('');
+  const runs = document.getElementById('runs-body');
+  if (!h.recent_runs.length) { runs.innerHTML = '<div class="empty">No runs yet.</div>'; return; }
+  runs.innerHTML = '<table><tr><th>Job</th><th>Status</th><th>Started</th><th class="num">Duration (s)</th><th class="num">Rows</th><th>Error</th></tr>' +
+    h.recent_runs.map(r => `<tr><td>${esc(r.name)}</td><td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(new Date(r.started_at).toLocaleString())}</td><td class="num">${esc(r.duration_seconds ?? '-')}</td><td class="num">${esc(r.rows_processed)}</td><td>${esc(r.error)}</td></tr>`).join('') +
+    '</table>';
+}
+
+async function loadAll() {
+  const days = document.getElementById('days').value;
+  try {
+    // daily first: it also runs any overdue maintenance jobs, so health below is current
+    const daily = await getJSON(`${API}/analytics/daily/?days=${days}`);
+    const [stats, top, health] = await Promise.all([
+      getJSON(`${API}/stats/`),
+      getJSON(`${API}/analytics/top/?days=${days}`),
+      getJSON(`${API}/pipeline/health/`),
+    ]);
+    renderTiles(stats);
+    renderDaily(daily);
+    renderLanguages(top.by_language);
+    renderTop(top.top_pastes);
+    renderHealth(health);
+    setText('updated', 'Updated ' + new Date().toLocaleTimeString());
+  } catch (e) {
+    setText('updated', 'Could not load data: ' + e.message);
+  }
+}
+loadAll();
+</script>
+</body>
+</html>

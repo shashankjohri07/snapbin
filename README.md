@@ -70,6 +70,7 @@ A fast, lightweight code-sharing platform built with Django REST Framework. Crea
 | `GET` | `/api/analytics/daily/?days=7` | Daily views with 3-day moving average (from rollup table) |
 | `GET` | `/api/pipeline/health/` | Recent job runs and data quality check results |
 | `GET` | `/api/analytics/top/?days=7` | Top pastes and views by language (from raw events) |
+| `GET` | `/dashboard/` | Analytics dashboard (charts, top pastes, pipeline health, job runs) |
 | `GET` | `/p/{short_code}/` | View paste (browser-friendly page) |
 
 ### Create Paste
@@ -151,6 +152,8 @@ view request -> PasteViewEvent (raw) -> rollup_daily_stats (ETL, hourly) -> Dail
 - **Observability:** every job logs status, duration, rows and errors to `PipelineRun`; `python manage.py check_data_quality` runs reconciliation, orphan and freshness checks.
 - **Design notes, trade-offs and scaling discussion:** see [docs/DESIGN.md](docs/DESIGN.md).
 - **Retention:** raw events older than 30 days are pruned, rollups are kept.
+- **Dashboard:** `/dashboard/` shows daily views with a 3-day moving average, views by language, top pastes, data quality checks and recent job runs (Chart.js, no build step).
+- **Lazy scheduler:** on hosts without a Celery worker, `GET /api/analytics/daily/` runs any overdue job inline (`pastes/scheduler.py`, cache lock prevents duplicate runs). With a real beat worker it is a no-op.
 - **No Celery worker (e.g. free hosting)?** Run all periodic jobs once with `python manage.py run_maintenance` from a scheduler/cron.
 - **PySpark batch job:** `pip install -r requirements-analytics.txt`, then
   `python manage.py export_events --output events.csv` and
@@ -195,7 +198,7 @@ pytest --cov=pastes --cov-report=term-missing
 ```
 
 ```
-36 passed — 93% coverage
+40 passed
 ```
 
 ### Celery Worker (for async cleanup)
@@ -225,7 +228,7 @@ snapbin/
 │   ├── middleware.py       # Rate limiter (Redis, cache fallback, fail-open)
 │   ├── management/         # run_maintenance, export_events commands
 │   ├── utils.py            # Short code generator, Pygments highlighting
-│   └── tests/              # 36 tests across 7 files
+│   └── tests/              # 40 tests across 7 files
 ├── templates/              # Frontend UI
 ├── .github/workflows/      # CI pipeline
 ├── analytics/              # PySpark batch rollup job

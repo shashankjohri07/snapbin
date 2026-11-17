@@ -33,6 +33,7 @@ check_data_quality / GET /api/pipeline/health/ : reconciliation, orphans, freshn
 | Composite index `(viewed_at, language)` | Daily rollup filters by time range and groups by language | Slightly slower inserts |
 | `short_code` copied into events (no FK) | Insert stays cheap, history survives paste deletion | Needs an orphan check (`check_orphan_events`) |
 | Run log in `PipelineRun` | Failures and slow runs are visible, freshness can be checked | Not a full scheduler (use Airflow for dependencies/retries) |
+| Lazy scheduler (run overdue jobs on dashboard load, cache lock) | Free hosting has no worker, so the pipeline still runs | Work happens inside a web request; a real scheduler (Celery beat/Airflow) is the proper fix |
 | DB-first quality checks | Reconciliation catches pipeline bugs early | Runs on the same DB as the app |
 
 ## 4. Data quality checks (`pastes/quality.py`)
@@ -62,4 +63,5 @@ Explicit schema (no inference), drop null/duplicate rows, normalise language, `g
 - **What if the job fails halfway?** The transaction rolls back that day; the run is logged as `failed` with the error; the freshness check fails until a run succeeds.
 - **Why Parquet and partitioning by date?** Columnar format and partition pruning make date-range reads cheap.
 - **Why a window function for the moving average?** Computed per language in one pass without self-joins.
+- **Why does the dashboard trigger jobs?** The free host has no worker. A cache lock stops duplicate runs; with Celery beat it is a no-op.
 - **Honest limits:** the API's moving average is computed in Python over the small rollup table; the window-function version lives in the Spark job. The app is not streaming and the Spark job is a manual/batch export, not scheduled.

@@ -25,6 +25,7 @@ def paste_page_view(request, short_code):
 
 urlpatterns = [
     path("", TemplateView.as_view(template_name="index.html"), name="root"),
+    path("dashboard/", TemplateView.as_view(template_name="dashboard.html"), name="dashboard"),
     path("p/<str:short_code>/", paste_page_view, name="paste-page"),
     path("admin/", admin.site.urls),
     path("api/", include("pastes.urls")),
