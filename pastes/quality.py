@@ -8,15 +8,21 @@ from .models import DailyStats, HourlyFact, Paste, PasteViewEvent, PipelineRun, 
 
 
 def check_reconciliation(days=3):
-    """Rollup totals must equal the raw event counts for each recent day."""
+    """Rollup totals must equal the raw event counts, as of the last successful rollup.
+
+    Events that arrived after the rollup started are not expected to be in it yet,
+    so they are excluded; otherwise every new view would flag a false failure.
+    """
     tz = timezone.get_current_timezone()
+    last = PipelineRun.objects.filter(name="rollup_daily_stats", status="success").first()
+    as_of = last.started_at if last else timezone.now()
     today = timezone.now().date()
     mismatches = []
     for offset in range(days):
         day = today - timedelta(days=offset)
         start = timezone.make_aware(datetime.combine(day, time.min), tz)
         raw = PasteViewEvent.objects.filter(
-            viewed_at__gte=start, viewed_at__lt=start + timedelta(days=1)
+            viewed_at__gte=start, viewed_at__lt=min(start + timedelta(days=1), as_of)
         ).count()
         rolled = DailyStats.objects.filter(date=day).aggregate(s=Sum("views"))["s"] or 0
         if raw != rolled:
@@ -24,7 +30,7 @@ def check_reconciliation(days=3):
     return {
         "check": "rollup_matches_raw_events",
         "passed": not mismatches,
-        "detail": "; ".join(mismatches) or f"last {days} days reconcile",
+        "detail": "; ".join(mismatches) or f"last {days} days reconcile (as of last rollup)",
     }
 
 

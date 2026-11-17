@@ -144,3 +144,12 @@ class TestIncrementalLoad:
         assert check_fact_reconciliation()["passed"]
         data = api_client.get("/api/analytics/hourly/").data
         assert len(data) == 24 and sum(r["views"] for r in data) == 6
+
+
+@pytest.mark.django_db
+def test_reconciliation_ignores_events_after_last_rollup(paste):
+    PasteViewEvent.objects.create(short_code="pipe0001", language="python")
+    rollup_daily_stats(days=3)
+    # a view that arrives after the rollup ran must not cause a false failure
+    PasteViewEvent.objects.create(short_code="pipe0001", language="python")
+    assert check_reconciliation()["passed"]
