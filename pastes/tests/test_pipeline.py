@@ -62,3 +62,30 @@ class TestQualityChecks:
         assert data["healthy"] is True and data["recent_runs"]
         call_command("check_data_quality")
         call_command("run_maintenance")
+
+
+@pytest.mark.django_db
+class TestLazyScheduler:
+    def test_runs_overdue_jobs_then_skips_fresh_ones(self):
+        from django.core.cache import cache
+
+        from pastes.scheduler import ensure_fresh_jobs
+
+        cache.clear()
+        first = ensure_fresh_jobs()
+        assert set(first) == {"rollup_daily_stats", "cleanup_expired_pastes", "prune_old_events"}
+        assert ensure_fresh_jobs() == []  # all fresh now
+
+    def test_daily_endpoint_triggers_rollup(self, api_client):
+        from django.core.cache import cache
+
+        cache.clear()
+        api_client.get("/api/analytics/daily/")
+        assert PipelineRun.objects.filter(name="rollup_daily_stats", status="success").exists()
+
+    def test_failed_job_does_not_break_request(self, api_client):
+        from django.core.cache import cache
+
+        cache.clear()
+        with patch("pastes.tasks.rollup_daily_stats", side_effect=RuntimeError("x")):
+            assert api_client.get("/api/analytics/daily/").status_code == 200

@@ -13,6 +13,7 @@ from pygments.lexers import get_all_lexers
 
 from .models import DailyStats, Paste, PasteViewEvent, PipelineRun
 from .quality import run_all_checks
+from .scheduler import ensure_fresh_jobs
 from .serializers import PasteCreateSerializer, PasteDetailSerializer, PasteListSerializer
 from .utils import (
     generate_delete_token,
@@ -175,9 +176,14 @@ class StatsView(APIView):
 
 
 class DailyAnalyticsView(APIView):
-    """Daily totals from the rollup table plus a 3-day moving average."""
+    """Daily totals from the rollup table plus a 3-day moving average.
+
+    Also runs overdue maintenance jobs inline (see scheduler.py), so the data
+    stays fresh on hosts that have no Celery worker.
+    """
 
     def get(self, request):
+        ensure_fresh_jobs()
         try:
             days = min(max(int(request.query_params.get("days", 7)), 1), 90)
         except ValueError:

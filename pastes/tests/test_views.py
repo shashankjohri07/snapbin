@@ -105,3 +105,11 @@ class TestListPastes:
         assert response.status_code == 200
         assert len(response.data["results"]) == 20
         assert response.data["count"] == 25
+
+
+@pytest.mark.django_db
+class TestPages:
+    def test_dashboard_page_renders(self, client):
+        response = client.get("/dashboard/")
+        assert response.status_code == 200
+        assert b"Analytics Dashboard" in response.content
