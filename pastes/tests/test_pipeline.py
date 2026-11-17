@@ -73,7 +73,12 @@ class TestLazyScheduler:
 
         cache.clear()
         first = ensure_fresh_jobs()
-        assert set(first) == {"rollup_daily_stats", "cleanup_expired_pastes", "prune_old_events"}
+        assert set(first) == {
+            "load_hourly_facts",
+            "rollup_daily_stats",
+            "cleanup_expired_pastes",
+            "prune_old_events",
+        }
         assert ensure_fresh_jobs() == []  # all fresh now
 
     def test_daily_endpoint_triggers_rollup(self, api_client):
@@ -89,3 +94,53 @@ class TestLazyScheduler:
         cache.clear()
         with patch("pastes.tasks.rollup_daily_stats", side_effect=RuntimeError("x")):
             assert api_client.get("/api/analytics/daily/").status_code == 200
+
+
+@pytest.mark.django_db
+class TestIncrementalLoad:
+    def _events(self, n, language="python"):
+        PasteViewEvent.objects.bulk_create(
+            [PasteViewEvent(short_code="pipe0001", language=language) for _ in range(n)]
+        )
+
+    def test_incremental_load_is_exactly_once(self):
+        from pastes.models import HourlyFact, PipelineWatermark
+        from pastes.tasks import load_hourly_facts
+
+        self._events(5)
+        assert load_hourly_facts() == 5
+        assert load_hourly_facts() == 0  # re-run: nothing new, no double count
+        self._events(3, "sql")
+        assert load_hourly_facts() == 3
+        assert sum(HourlyFact.objects.values_list("views", flat=True)) == 8
+        assert PipelineWatermark.objects.get(name="hourly_facts").last_event_id == PasteViewEvent.objects.latest("id").id
+
+    def test_batch_limit_catches_up_over_runs(self):
+        from pastes.tasks import load_hourly_facts
+
+        self._events(10)
+        assert load_hourly_facts(batch_limit=4) == 4
+        assert load_hourly_facts(batch_limit=4) == 4
+        assert load_hourly_facts(batch_limit=4) == 2
+
+    def test_failure_rolls_back_watermark(self):
+        from pastes.models import HourlyFact, PipelineWatermark
+        from pastes.tasks import load_hourly_facts
+
+        self._events(4)
+        with patch("pastes.models.HourlyFact.objects.create", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                load_hourly_facts()
+        assert HourlyFact.objects.count() == 0
+        assert not PipelineWatermark.objects.filter(last_event_id__gt=0).exists()
+        assert load_hourly_facts() == 4  # recovers cleanly
+
+    def test_fact_check_and_hourly_endpoint(self, api_client):
+        from pastes.quality import check_fact_reconciliation
+        from pastes.tasks import load_hourly_facts
+
+        self._events(6)
+        load_hourly_facts()
+        assert check_fact_reconciliation()["passed"]
+        data = api_client.get("/api/analytics/hourly/").data
+        assert len(data) == 24 and sum(r["views"] for r in data) == 6

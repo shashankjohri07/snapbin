@@ -12,12 +12,12 @@ class Command(BaseCommand):
         parser.add_argument("--output", default="events.csv")
 
     def handle(self, *args, **opts):
-        rows = PasteViewEvent.objects.values_list("short_code", "language", "viewed_at").iterator()
+        rows = PasteViewEvent.objects.values_list("id", "short_code", "language", "viewed_at").iterator()
         with open(opts["output"], "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["short_code", "language", "viewed_at"])
+            writer.writerow(["event_id", "short_code", "language", "viewed_at"])
             count = 0
-            for code, lang, ts in rows:
-                writer.writerow([code, lang, ts.isoformat()])
+            for event_id, code, lang, ts in rows:
+                writer.writerow([event_id, code, lang, ts.isoformat()])
                 count += 1
         self.stdout.write(self.style.SUCCESS(f"Exported {count} events to {opts['output']}"))

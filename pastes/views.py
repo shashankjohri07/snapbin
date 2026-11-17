@@ -5,13 +5,14 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.db import models as db_models
 from django.db.models import Count, Sum
+from django.db.models.functions import ExtractHour
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from pygments.lexers import get_all_lexers
 
-from .models import DailyStats, Paste, PasteViewEvent, PipelineRun
+from .models import DailyStats, HourlyFact, Paste, PasteViewEvent, PipelineRun
 from .quality import run_all_checks
 from .scheduler import ensure_fresh_jobs
 from .serializers import PasteCreateSerializer, PasteDetailSerializer, PasteListSerializer
@@ -252,3 +253,18 @@ class PipelineHealthView(APIView):
         return Response(
             {"healthy": all(c["passed"] for c in checks), "checks": checks, "recent_runs": runs}
         )
+
+
+class HourlyPatternView(APIView):
+    """Views by hour of day (UTC) from the incrementally loaded fact table."""
+
+    def get(self, request):
+        ensure_fresh_jobs()
+        rows = (
+            HourlyFact.objects.annotate(h=ExtractHour("hour"))
+            .values("h")
+            .annotate(views=Sum("views"))
+            .order_by("h")
+        )
+        by_hour = {r["h"]: r["views"] for r in rows}
+        return Response([{"hour": h, "views": by_hour.get(h, 0)} for h in range(24)])

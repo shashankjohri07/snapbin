@@ -69,6 +69,7 @@ A fast, lightweight code-sharing platform built with Django REST Framework. Crea
 | `GET` | `/api/stats/` | Overall totals |
 | `GET` | `/api/analytics/daily/?days=7` | Daily views with 3-day moving average (from rollup table) |
 | `GET` | `/api/pipeline/health/` | Recent job runs and data quality check results |
+| `GET` | `/api/analytics/hourly/` | Views by hour of day from the hourly fact table |
 | `GET` | `/api/analytics/top/?days=7` | Top pastes and views by language (from raw events) |
 | `GET` | `/dashboard/` | Analytics dashboard (charts, top pastes, pipeline health, job runs) |
 | `GET` | `/p/{short_code}/` | View paste (browser-friendly page) |
@@ -149,6 +150,8 @@ view request -> PasteViewEvent (raw) -> rollup_daily_stats (ETL, hourly) -> Dail
 ```
 
 - **Event logging + rollup:** every view appends a raw event; an idempotent job (delete-and-insert per day inside a transaction) aggregates views, unique pastes and creations per language per day.
+- **Incremental load:** `load_hourly_facts` loads new events into `HourlyFact` using a watermark, atomically with the facts (re-runs never double count). `GET /api/analytics/hourly/` serves the hour-of-day pattern.
+- **Scale test:** `python manage.py generate_traffic --events 200000` creates synthetic data (`--purge` removes it); see the measured timings in [docs/DESIGN.md](docs/DESIGN.md).
 - **Observability:** every job logs status, duration, rows and errors to `PipelineRun`; `python manage.py check_data_quality` runs reconciliation, orphan and freshness checks.
 - **Design notes, trade-offs and scaling discussion:** see [docs/DESIGN.md](docs/DESIGN.md).
 - **Retention:** raw events older than 30 days are pruned, rollups are kept.
@@ -198,7 +201,7 @@ pytest --cov=pastes --cov-report=term-missing
 ```
 
 ```
-40 passed
+44 passed
 ```
 
 ### Celery Worker (for async cleanup)
@@ -228,7 +231,7 @@ snapbin/
 │   ├── middleware.py       # Rate limiter (Redis, cache fallback, fail-open)
 │   ├── management/         # run_maintenance, export_events commands
 │   ├── utils.py            # Short code generator, Pygments highlighting
-│   └── tests/              # 40 tests across 7 files
+│   └── tests/              # 44 tests across 7 files
 ├── templates/              # Frontend UI
 ├── .github/workflows/      # CI pipeline
 ├── analytics/              # PySpark batch rollup job

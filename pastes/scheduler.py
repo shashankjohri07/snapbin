@@ -16,6 +16,7 @@ from . import tasks
 logger = logging.getLogger(__name__)
 
 JOBS = [
+    ("load_hourly_facts", timedelta(minutes=30)),
     ("rollup_daily_stats", timedelta(minutes=60)),
     ("cleanup_expired_pastes", timedelta(minutes=60)),
     ("prune_old_events", timedelta(days=1)),
