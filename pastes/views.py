@@ -1,16 +1,26 @@
 import logging
+import secrets
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.db import models as db_models
+from django.db.models import Count, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from pygments.lexers import get_all_lexers
 
-from .models import Paste
+from .models import DailyStats, Paste, PasteViewEvent, PipelineRun
+from .quality import run_all_checks
 from .serializers import PasteCreateSerializer, PasteDetailSerializer, PasteListSerializer
-from .utils import get_unique_short_code, highlight_code
+from .utils import (
+    generate_delete_token,
+    get_unique_short_code,
+    highlight_code,
+    normalize_language,
+    record_view,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +32,23 @@ class CreatePasteView(APIView):
         data = serializer.validated_data
 
         short_code = get_unique_short_code(Paste)
-        highlighted_html = highlight_code(data["content"], data["language"])
+        language = normalize_language(data["language"])
+        highlighted_html = highlight_code(data["content"], language)
 
         expires_at = None
         cache_ttl = 3600
         if data.get("expires_in"):
-            expires_at = timezone.now() + timezone.timedelta(seconds=data["expires_in"])
+            expires_at = timezone.now() + timedelta(seconds=data["expires_in"])
             cache_ttl = data["expires_in"]
 
         paste = Paste.objects.create(
             short_code=short_code,
             title=data.get("title", ""),
             content=data["content"],
-            language=data["language"],
+            language=language,
             highlighted_html=highlighted_html,
             expires_at=expires_at,
+            delete_token=generate_delete_token(),
         )
 
         try:
@@ -52,6 +64,7 @@ class CreatePasteView(APIView):
                 "url": request.build_absolute_uri(f"/p/{paste.short_code}/"),
                 "expires_at": paste.expires_at,
                 "created_at": paste.created_at,
+                "delete_token": paste.delete_token,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -65,9 +78,7 @@ class RetrievePasteView(APIView):
             cached = None
 
         if cached:
-            Paste.objects.filter(short_code=short_code, is_active=True).update(
-                view_count=db_models.F("view_count") + 1
-            )
+            record_view(short_code, cached.get("language", "text"))
             return Response(cached)
 
         try:
@@ -82,8 +93,8 @@ class RetrievePasteView(APIView):
                 {"detail": "Paste not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        paste.view_count += 1
-        paste.save(update_fields=["view_count"])
+        record_view(paste)
+        paste.refresh_from_db(fields=["view_count"])
 
         data = PasteDetailSerializer(paste).data
 
@@ -106,6 +117,13 @@ class DeletePasteView(APIView):
         except Paste.DoesNotExist:
             return Response(
                 {"detail": "Paste not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        token = request.headers.get("X-Delete-Token") or request.data.get("delete_token", "")
+        if not paste.delete_token or not secrets.compare_digest(str(token), paste.delete_token):
+            return Response(
+                {"detail": "A valid delete token is required."},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         paste.is_active = False
@@ -154,3 +172,77 @@ class StatsView(APIView):
             "active_pastes": active,
             "total_views": total_views,
         })
+
+
+class DailyAnalyticsView(APIView):
+    """Daily totals from the rollup table plus a 3-day moving average."""
+
+    def get(self, request):
+        try:
+            days = min(max(int(request.query_params.get("days", 7)), 1), 90)
+        except ValueError:
+            days = 7
+        since = timezone.now().date() - timedelta(days=days - 1)
+        # fetch 2 extra days so the moving average is correct on the first day
+        rows = list(
+            DailyStats.objects.filter(date__gte=since - timedelta(days=2))
+            .values("date")
+            .annotate(views=Sum("views"), pastes_created=Sum("pastes_created"))
+            .order_by("date")
+        )
+        result = []
+        for i, row in enumerate(rows):
+            if row["date"] < since:
+                continue
+            window = [r["views"] for r in rows[max(i - 2, 0): i + 1]]
+            result.append(
+                {
+                    "date": row["date"],
+                    "views": row["views"],
+                    "pastes_created": row["pastes_created"],
+                    "views_3d_avg": round(sum(window) / len(window), 2),
+                }
+            )
+        return Response(result)
+
+
+class TopPastesView(APIView):
+    """Most viewed pastes and language breakdown over the last N days (from raw events)."""
+
+    def get(self, request):
+        try:
+            days = min(max(int(request.query_params.get("days", 7)), 1), 90)
+        except ValueError:
+            days = 7
+        since = timezone.now() - timedelta(days=days)
+        events = PasteViewEvent.objects.filter(viewed_at__gte=since)
+        top = list(
+            events.values("short_code", "language")
+            .annotate(views=Count("id"))
+            .order_by("-views")[:10]
+        )
+        by_language = list(
+            events.values("language").annotate(views=Count("id")).order_by("-views")
+        )
+        return Response({"days": days, "top_pastes": top, "by_language": by_language})
+
+
+class PipelineHealthView(APIView):
+    """Recent job runs plus current data quality check results."""
+
+    def get(self, request):
+        runs = [
+            {
+                "name": r.name,
+                "status": r.status,
+                "started_at": r.started_at,
+                "duration_seconds": r.duration_seconds,
+                "rows_processed": r.rows_processed,
+                "error": r.error,
+            }
+            for r in PipelineRun.objects.all()[:20]
+        ]
+        checks = run_all_checks()
+        return Response(
+            {"healthy": all(c["passed"] for c in checks), "checks": checks, "recent_runs": runs}
+        )

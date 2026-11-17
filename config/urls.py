@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from pastes.models import Paste
+from pastes.utils import record_view
 
 
 def paste_page_view(request, short_code):
@@ -16,8 +17,8 @@ def paste_page_view(request, short_code):
     if paste.is_expired:
         return render(request, "paste_view.html", {"paste": None})
 
-    paste.view_count += 1
-    paste.save(update_fields=["view_count"])
+    record_view(paste)
+    paste.refresh_from_db(fields=["view_count"])
 
     return render(request, "paste_view.html", {"paste": paste})
 

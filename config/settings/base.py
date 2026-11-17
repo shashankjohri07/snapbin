@@ -86,6 +86,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "pastes.tasks.cleanup_expired_pastes",
         "schedule": 600.0,
     },
+    "rollup-daily-stats": {
+        "task": "pastes.tasks.rollup_daily_stats",
+        "schedule": 3600.0,
+    },
+    "prune-old-events": {
+        "task": "pastes.tasks.prune_old_events",
+        "schedule": 86400.0,
+    },
 }
 
 RATE_LIMIT_MAX_REQUESTS = 30

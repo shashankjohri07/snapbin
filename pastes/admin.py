@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Paste
+from .models import DailyStats, Paste, PipelineRun
 
 
 @admin.register(Paste)
@@ -9,3 +9,15 @@ class PasteAdmin(admin.ModelAdmin):
     list_filter = ["is_active", "language"]
     search_fields = ["short_code", "title", "content"]
     readonly_fields = ["id", "short_code", "created_at", "view_count"]
+
+
+@admin.register(PipelineRun)
+class PipelineRunAdmin(admin.ModelAdmin):
+    list_display = ["name", "status", "started_at", "duration_seconds", "rows_processed"]
+    list_filter = ["name", "status"]
+
+
+@admin.register(DailyStats)
+class DailyStatsAdmin(admin.ModelAdmin):
+    list_display = ["date", "language", "views", "unique_pastes_viewed", "pastes_created"]
+    list_filter = ["language"]

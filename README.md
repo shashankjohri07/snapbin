@@ -66,6 +66,10 @@ A fast, lightweight code-sharing platform built with Django REST Framework. Crea
 | `DELETE` | `/api/pastes/{short_code}/delete/` | Soft-delete a paste |
 | `GET` | `/api/pastes/list/` | List recent pastes (paginated) |
 | `GET` | `/api/languages/` | List supported languages |
+| `GET` | `/api/stats/` | Overall totals |
+| `GET` | `/api/analytics/daily/?days=7` | Daily views with 3-day moving average (from rollup table) |
+| `GET` | `/api/pipeline/health/` | Recent job runs and data quality check results |
+| `GET` | `/api/analytics/top/?days=7` | Top pastes and views by language (from raw events) |
 | `GET` | `/p/{short_code}/` | View paste (browser-friendly page) |
 
 ### Create Paste
@@ -91,6 +95,8 @@ curl -X POST http://localhost:8000/api/pastes/ \
   "created_at": "2026-08-15T09:30:00Z"
 }
 ```
+
+Deleting needs the `delete_token` returned on create: `curl -X DELETE -H "X-Delete-Token: <token>" .../api/pastes/{short_code}/delete/`.
 
 ### Retrieve Paste
 
@@ -125,7 +131,30 @@ pastes_paste
 ├── created_at          TIMESTAMP
 ├── view_count          INTEGER, default=0
 └── is_active           BOOLEAN, default=True (soft delete flag)
+
+pastes_pasteviewevent   (raw layer: append-only, one row per view)
+├── short_code, language, viewed_at (indexed)
+
+pastes_dailystats       (aggregated layer: rebuilt idempotently)
+└── date, language, views, unique_pastes_viewed, pastes_created  UNIQUE(date, language)
 ```
+
+## Data Pipeline (analytics)
+
+```
+view request -> PasteViewEvent (raw) -> rollup_daily_stats (ETL, hourly) -> DailyStats -> /api/analytics/*
+                                     -> prune_old_events (30-day retention)
+                    export_events (CSV) -> analytics/spark_rollup.py (PySpark) -> partitioned Parquet
+```
+
+- **Event logging + rollup:** every view appends a raw event; an idempotent job (delete-and-insert per day inside a transaction) aggregates views, unique pastes and creations per language per day.
+- **Observability:** every job logs status, duration, rows and errors to `PipelineRun`; `python manage.py check_data_quality` runs reconciliation, orphan and freshness checks.
+- **Design notes, trade-offs and scaling discussion:** see [docs/DESIGN.md](docs/DESIGN.md).
+- **Retention:** raw events older than 30 days are pruned, rollups are kept.
+- **No Celery worker (e.g. free hosting)?** Run all periodic jobs once with `python manage.py run_maintenance` from a scheduler/cron.
+- **PySpark batch job:** `pip install -r requirements-analytics.txt`, then
+  `python manage.py export_events --output events.csv` and
+  `python analytics/spark_rollup.py --input events.csv --output out/daily_stats` (needs Java).
 
 ## Setup
 
@@ -166,7 +195,7 @@ pytest --cov=pastes --cov-report=term-missing
 ```
 
 ```
-20 passed — 93% coverage
+36 passed — 93% coverage
 ```
 
 ### Celery Worker (for async cleanup)
@@ -192,12 +221,15 @@ snapbin/
 │   ├── models.py           # Paste model (UUID, soft delete, expiry)
 │   ├── views.py            # DRF API views
 │   ├── serializers.py      # Input validation & output formatting
-│   ├── tasks.py            # Celery cleanup task
-│   ├── middleware.py       # Redis rate limiter (fail-open)
+│   ├── tasks.py            # Cleanup, daily rollup (ETL), event retention
+│   ├── middleware.py       # Rate limiter (Redis, cache fallback, fail-open)
+│   ├── management/         # run_maintenance, export_events commands
 │   ├── utils.py            # Short code generator, Pygments highlighting
-│   └── tests/              # 20 tests across 4 files
+│   └── tests/              # 36 tests across 7 files
 ├── templates/              # Frontend UI
 ├── .github/workflows/      # CI pipeline
+├── analytics/              # PySpark batch rollup job
+├── docs/DESIGN.md          # Pipeline design, trade-offs, interview Q&A
 └── requirements.txt
 ```
 

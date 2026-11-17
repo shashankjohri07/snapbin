@@ -169,6 +169,16 @@ const API = '/api';
 let currentCode = '';
 let currentContent = '';
 
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function getTokens() {
+  try { return JSON.parse(localStorage.getItem('snapbinTokens') || '{}'); } catch (e) { return {}; }
+}
+function saveToken(code, token) {
+  try { const t = getTokens(); t[code] = token; localStorage.setItem('snapbinTokens', JSON.stringify(t)); } catch (e) {}
+}
+
 function loadLanguages() {
   const sel = document.getElementById('language');
   const languages = [
@@ -221,6 +231,7 @@ async function createPaste() {
     document.getElementById('paste-url').textContent = url;
     document.getElementById('result').style.display = 'block';
     currentCode = data.short_code;
+    saveToken(data.short_code, data.delete_token);
   } else {
     alert(JSON.stringify(data));
   }
@@ -233,12 +244,12 @@ async function loadPastes() {
     const list = document.getElementById('paste-list');
     if (!data.results.length) { list.innerHTML = '<div class="empty">No pastes yet. Create one!</div>'; return; }
     list.innerHTML = data.results.map(p => `
-      <div class="paste-item" onclick="viewPaste('${p.short_code}')">
+      <div class="paste-item" onclick="viewPaste('${esc(p.short_code)}')">
         <div>
-          <div class="paste-title">${p.title || 'Untitled'}</div>
-          <div class="paste-meta">${timeAgo(p.created_at)} &middot; ${p.view_count} views${p.expires_at ? ' &middot; expires ' + timeAgo(p.expires_at) : ''}</div>
+          <div class="paste-title">${esc(p.title) || 'Untitled'}</div>
+          <div class="paste-meta">${timeAgo(p.created_at)} &middot; ${esc(p.view_count)} views${p.expires_at ? ' &middot; expires ' + timeAgo(p.expires_at) : ''}</div>
         </div>
-        <span class="paste-lang">${p.language}</span>
+        <span class="paste-lang">${esc(p.language)}</span>
       </div>
     `).join('');
   } catch(e) { document.getElementById('paste-list').innerHTML = '<div class="empty">Failed to load</div>'; }
@@ -263,7 +274,10 @@ async function viewPaste(code) {
 
 async function deletePaste() {
   if (!confirm('Delete this paste?')) return;
-  await fetch(`${API}/pastes/${currentCode}/delete/`, {method:'DELETE'});
+  const token = getTokens()[currentCode];
+  if (!token) { alert('Only the browser that created this paste can delete it.'); return; }
+  const res = await fetch(`${API}/pastes/${currentCode}/delete/`, {method:'DELETE', headers: {'X-Delete-Token': token}});
+  if (!res.ok) { alert('Could not delete this paste.'); return; }
   showTab('browse');
 }
 

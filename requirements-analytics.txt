@@ -1,0 +1,2 @@
+pyspark>=3.5
+pyarrow>=15
