@@ -1,9 +1,3 @@
-databases:
-  - name: snapbin-db
-    plan: free
-    databaseName: snapbin
-    user: snapbin
-
 services:
   - type: web
     name: snapbin
@@ -21,9 +15,7 @@ services:
       - key: ALLOWED_HOSTS
         value: .onrender.com
       - key: DATABASE_URL
-        fromDatabase:
-          name: snapbin-db
-          property: connectionString
+        sync: false  # external PostgreSQL (e.g. Neon); set in the Render dashboard
       - key: REDIS_URL
         value: ""
       - key: CELERY_BROKER_URL
