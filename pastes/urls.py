@@ -11,5 +11,6 @@ urlpatterns = [
     path("stats/", views.StatsView.as_view(), name="stats"),
     path("analytics/daily/", views.DailyAnalyticsView.as_view(), name="analytics-daily"),
     path("pipeline/health/", views.PipelineHealthView.as_view(), name="pipeline-health"),
+    path("analytics/hourly/", views.HourlyPatternView.as_view(), name="analytics-hourly"),
     path("analytics/top/", views.TopPastesView.as_view(), name="analytics-top"),
 ]

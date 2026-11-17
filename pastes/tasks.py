@@ -119,3 +119,46 @@ def prune_old_events(retention_days=30):
     deleted, _ = PasteViewEvent.objects.filter(viewed_at__lt=cutoff).delete()
     logger.info("Pruned %d old view events", deleted)
     return deleted
+
+
+@shared_task
+@tracked("load_hourly_facts")
+def load_hourly_facts(batch_limit=None):
+    """Incremental load: append new raw events (id > watermark) into HourlyFact.
+
+    Facts and the watermark move in one transaction, so a crash or a re-run can
+    neither lose nor double-count events (exactly-once effect).
+    Returns the number of events loaded.
+    """
+    from django.db import transaction
+    from django.db.models import Count, F, Max
+    from django.db.models.functions import TruncHour
+
+    from .models import HourlyFact, PasteViewEvent, PipelineWatermark
+
+    with transaction.atomic():
+        wm, _ = PipelineWatermark.objects.get_or_create(name="hourly_facts")
+        new = PasteViewEvent.objects.filter(id__gt=wm.last_event_id)
+        upper = new.aggregate(m=Max("id"))["m"]
+        if upper is None:
+            return 0
+        if batch_limit:
+            upper = min(upper, wm.last_event_id + batch_limit)
+        batch = PasteViewEvent.objects.filter(id__gt=wm.last_event_id, id__lte=upper)
+        agg = list(
+            batch.annotate(h=TruncHour("viewed_at"))
+            .values("h", "language")
+            .annotate(n=Count("id"))
+        )
+        loaded = 0
+        for row in agg:
+            updated = HourlyFact.objects.filter(hour=row["h"], language=row["language"]).update(
+                views=F("views") + row["n"]
+            )
+            if not updated:
+                HourlyFact.objects.create(hour=row["h"], language=row["language"], views=row["n"])
+            loaded += row["n"]
+        wm.last_event_id = upper
+        wm.save()
+    logger.info("Loaded %d events into HourlyFact (watermark=%d)", loaded, upper)
+    return loaded

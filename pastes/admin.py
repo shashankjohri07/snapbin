@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DailyStats, Paste, PipelineRun
+from .models import DailyStats, HourlyFact, Paste, PipelineRun, PipelineWatermark
 
 
 @admin.register(Paste)
@@ -21,3 +21,14 @@ class PipelineRunAdmin(admin.ModelAdmin):
 class DailyStatsAdmin(admin.ModelAdmin):
     list_display = ["date", "language", "views", "unique_pastes_viewed", "pastes_created"]
     list_filter = ["language"]
+
+
+@admin.register(HourlyFact)
+class HourlyFactAdmin(admin.ModelAdmin):
+    list_display = ["hour", "language", "views"]
+    list_filter = ["language"]
+
+
+@admin.register(PipelineWatermark)
+class PipelineWatermarkAdmin(admin.ModelAdmin):
+    list_display = ["name", "last_event_id", "updated_at"]

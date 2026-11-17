@@ -11,10 +11,11 @@ import argparse
 
 from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, StructField, StructType, TimestampType
+from pyspark.sql.types import LongType, StringType, StructField, StructType, TimestampType
 
 SCHEMA = StructType(
     [
+        StructField("event_id", LongType(), True),
         StructField("short_code", StringType(), True),
         StructField("language", StringType(), True),
         StructField("viewed_at", TimestampType(), True),
@@ -24,8 +25,8 @@ SCHEMA = StructType(
 
 def build_daily_stats(events):
     clean = (
-        events.dropna(subset=["short_code", "viewed_at"])
-        .dropDuplicates()
+        events.dropna(subset=["event_id", "short_code", "viewed_at"])
+        .dropDuplicates(["event_id"])  # dedupe on the event key, not on row content
         .withColumn("language", F.lower(F.coalesce(F.col("language"), F.lit("text"))))
         .withColumn("date", F.to_date("viewed_at"))
     )

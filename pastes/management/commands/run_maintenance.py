@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from pastes.quality import run_all_checks
-from pastes.tasks import cleanup_expired_pastes, prune_old_events, rollup_daily_stats
+from pastes.tasks import cleanup_expired_pastes, load_hourly_facts, prune_old_events, rollup_daily_stats
 
 
 class Command(BaseCommand):
@@ -16,10 +16,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         expired = cleanup_expired_pastes()
+        loaded = load_hourly_facts()
         rollup_daily_stats(opts["days"])
         pruned = prune_old_events(opts["retention_days"])
         self.stdout.write(
-            self.style.SUCCESS(f"cleaned={expired} rolled_up_days={opts['days']} pruned={pruned}")
+            self.style.SUCCESS(f"cleaned={expired} loaded_events={loaded} rolled_up_days={opts['days']} pruned={pruned}")
         )
         for r in run_all_checks():
             self.stdout.write(f"[{'PASS' if r['passed'] else 'FAIL'}] {r['check']}: {r['detail']}")

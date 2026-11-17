@@ -84,3 +84,29 @@ class PipelineRun(models.Model):
         if not self.finished_at:
             return None
         return round((self.finished_at - self.started_at).total_seconds(), 3)
+
+
+class PipelineWatermark(models.Model):
+    """Incremental-load bookmark: highest event id already loaded by a job."""
+
+    name = models.CharField(max_length=100, unique=True)
+    last_event_id = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class HourlyFact(models.Model):
+    """Fact table, grain = (hour, language). Loaded incrementally from raw events.
+
+    Only additive measures are stored: distinct counts cannot be summed across
+    batches, so unique-paste metrics live in the daily rollup instead.
+    """
+
+    hour = models.DateTimeField(db_index=True)
+    language = models.CharField(max_length=50)
+    views = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-hour", "language"]
+        constraints = [
+            models.UniqueConstraint(fields=["hour", "language"], name="uniq_hourly_fact_hour_language")
+        ]

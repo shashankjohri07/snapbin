@@ -23,6 +23,26 @@ GET paste -> record_view() -> PasteViewEvent (raw)
 check_data_quality / GET /api/pipeline/health/ : reconciliation, orphans, freshness
 ```
 
+## 2b. Incremental fact load (watermark)
+
+`load_hourly_facts` appends only events with `id > watermark` into `HourlyFact` (grain: hour x language) and moves the watermark in the **same transaction**. A crash rolls both back and a re-run loads nothing twice (exactly-once effect). `batch_limit` lets a large backlog be caught up in chunks. Late-arriving events are safe because progress is tracked by event id, not by time. Only additive measures are stored: distinct counts cannot be summed across batches, which is why unique pastes live in the daily rollup.
+
+## 2c. Scale test (synthetic data)
+
+`python manage.py generate_traffic` creates 2,000 pastes and 200,000 view events (Zipf popularity, weekday dip, afternoon peak); `--purge` removes it. Measured on a small sandbox machine with SQLite (numbers are indicative, not a benchmark of production):
+
+| Step | Input | Time |
+|------|-------|------|
+| Generate data | 200,000 events | about 9 s |
+| Incremental fact load | 200,000 events into 7,164 fact rows | about 3.9 s |
+| Re-run with no new data | 0 events | about 3 ms |
+| Daily rollup | 31 days, 300 rows | about 0.4 s |
+| PySpark job (CSV to Parquet) | 200,000 events, 9.6 MB CSV to 380 KB Parquet | about 20 s, mostly JVM start-up |
+
+All checks pass at this volume, and Spark and SQL totals match exactly (200,000). Spark is slower than SQL here because the data is tiny; it pays off at volumes that do not fit one database server.
+
+**A bug the scale test found:** the Spark job first de-duplicated on whole-row content, which silently dropped 18 legitimate views (same paste, same second). It now de-duplicates on `event_id`, and a unit test covers it. Lesson: dedupe on a key, not on content.
+
 ## 3. Key decisions and trade-offs
 
 | Decision | Why | Trade-off |
@@ -64,4 +84,6 @@ Explicit schema (no inference), drop null/duplicate rows, normalise language, `g
 - **Why Parquet and partitioning by date?** Columnar format and partition pruning make date-range reads cheap.
 - **Why a window function for the moving average?** Computed per language in one pass without self-joins.
 - **Why does the dashboard trigger jobs?** The free host has no worker. A cache lock stops duplicate runs; with Celery beat it is a no-op.
-- **Honest limits:** the API's moving average is computed in Python over the small rollup table; the window-function version lives in the Spark job. The app is not streaming and the Spark job is a manual/batch export, not scheduled.
+- **Why watermark by id and not by timestamp?** Ids are monotonic per table, timestamps can arrive late or out of order.
+- **How did you test at scale?** A seeded synthetic generator (200k events), reconciliation checks, and a Spark-vs-SQL total comparison, which exposed a dedupe bug.
+- **Honest limits:** the API's moving average is computed in Python over the small rollup table; the window-function version lives in the Spark job. The app is not streaming, the Spark job is a manual/batch export (not scheduled), and the 200k-event numbers come from synthetic data on SQLite, not from real traffic.

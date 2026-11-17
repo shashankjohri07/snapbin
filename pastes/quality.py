@@ -4,7 +4,7 @@ from datetime import datetime, time, timedelta
 from django.db.models import Sum
 from django.utils import timezone
 
-from .models import DailyStats, Paste, PasteViewEvent, PipelineRun
+from .models import DailyStats, HourlyFact, Paste, PasteViewEvent, PipelineRun, PipelineWatermark
 
 
 def check_reconciliation(days=3):
@@ -53,5 +53,23 @@ def check_freshness(max_age_hours=3):
     }
 
 
+def check_fact_reconciliation():
+    """Fact table total must equal the number of events up to the watermark."""
+    wm = PipelineWatermark.objects.filter(name="hourly_facts").first()
+    upto = wm.last_event_id if wm else 0
+    expected = PasteViewEvent.objects.filter(id__lte=upto).count()
+    actual = HourlyFact.objects.aggregate(s=Sum("views"))["s"] or 0
+    return {
+        "check": "fact_matches_loaded_events",
+        "passed": expected == actual,
+        "detail": f"events<=watermark={expected} fact_views={actual} (watermark={upto})",
+    }
+
+
 def run_all_checks():
-    return [check_reconciliation(), check_orphan_events(), check_freshness()]
+    return [
+        check_reconciliation(),
+        check_fact_reconciliation(),
+        check_orphan_events(),
+        check_freshness(),
+    ]
