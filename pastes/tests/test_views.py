@@ -72,11 +72,28 @@ class TestRetrievePaste:
 
 @pytest.mark.django_db
 class TestDeletePaste:
-    def test_delete_paste(self, api_client, sample_paste):
+    def test_delete_requires_token(self, api_client, sample_paste):
         response = api_client.delete(f"/api/pastes/{sample_paste.short_code}/delete/")
+        assert response.status_code == 403
+
+    def test_delete_wrong_token(self, api_client, sample_paste):
+        sample_paste.delete_token = "right-token"
+        sample_paste.save()
+        response = api_client.delete(
+            f"/api/pastes/{sample_paste.short_code}/delete/", HTTP_X_DELETE_TOKEN="wrong"
+        )
+        assert response.status_code == 403
+
+    def test_delete_with_token(self, api_client):
+        created = api_client.post(
+            "/api/pastes/", {"content": "x", "language": "python"}, format="json"
+        ).data
+        response = api_client.delete(
+            f"/api/pastes/{created['short_code']}/delete/",
+            HTTP_X_DELETE_TOKEN=created["delete_token"],
+        )
         assert response.status_code == 204
-        response = api_client.get(f"/api/pastes/{sample_paste.short_code}/")
-        assert response.status_code == 404
+        assert api_client.get(f"/api/pastes/{created['short_code']}/").status_code == 404
 
 
 @pytest.mark.django_db

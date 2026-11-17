@@ -13,3 +13,5 @@ htmlcov/
 *.log
 venv/
 .venv/
+events.csv
+out/
